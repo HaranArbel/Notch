@@ -70,6 +70,18 @@ Sentiment extraction (Part B) requires a second OpenAI call using function calli
 
 ---
 
+## Notes & future considerations
+
+**Conversation length and context window**
+Every request sends the full conversation history to OpenAI. This works well for short conversations but has two implications as history grows:
+
+- **Token limit** — `gpt-4o-mini` supports 128k tokens, but very long conversations will eventually hit it and the API will return an error. A practical mitigation is to truncate to the last N messages (e.g. 20) before sending, accepting some loss of early context.
+- **Attention degradation** — even within the context window, LLMs attend less reliably to content far back in the history. Long-running conversations may feel less coherent as the model "forgets" earlier details.
+
+A production system would address this with a summarisation strategy: periodically collapse older messages into a single summary message, keeping the total token count bounded while preserving the gist of the conversation.
+
+---
+
 ## What's next
 
 1. **`POST /chat/message` route** — controller validates the incoming message array with Zod and calls `getChatCompletion` from `bl/chat.ts`
