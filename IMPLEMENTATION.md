@@ -22,7 +22,7 @@ cd frontend && npm install && npm run dev
 frontend/          React + Vite + TypeScript
   src/
     api/           Fetch wrappers — all HTTP logic isolated here
-    pages/         One component per route (Part C)
+    pages/         One component per route
     ChatMessage/   Reusable chat bubble component
 
 backend/           Express + TypeScript
@@ -38,18 +38,18 @@ backend/           Express + TypeScript
 
 ## Decisions
 
-### Environment config (A2)
+### Environment config
 
 - `local.env` is gitignored — secrets never touch git history
 - `local.env.example` is committed as a template
 - Config is parsed and validated with **Zod** at startup — the server crashes immediately with a clear message if a required variable is missing, rather than failing silently at runtime
 
-### Frontend API base URL (A6)
+### Frontend API base URL
 
 - Hardcoding `localhost:3000` would break in any non-local environment
 - Using Vite's `import.meta.env.VITE_API_BASE` means local dev, staging, and production each set their own value without code changes
 
-### Emoji signing (A3 / Part A requirement)
+### Emoji signing
 
 The requirement says *"the bot always signs each message with a different emoji"*. Two approaches considered:
 
@@ -66,23 +66,50 @@ To prevent the LLM from adding its own emojis independently (which would result 
 
 One remaining trade-off: the generator is a module-level singleton, so all conversations share the same emoji sequence. In a multi-user production system, each conversation would get its own generator instance.
 
-### Parallel OpenAI calls (Part B)
+### Parallel OpenAI calls
 
-Sentiment extraction (Part B) requires a second OpenAI call using function calling. Running it in `Promise.all` alongside the chat completion means both calls happen concurrently — the total latency is `max(completion, sentiment)` rather than the sum. Since neither result depends on the other, parallelism is free here.
+Sentiment extraction requires a second OpenAI call using function calling. The initial approach considered was `Promise.all` — both calls fire simultaneously and the total latency is `max(completion, sentiment)` rather than their sum.
 
-At scale, `Promise.all` means every user request fires 2 simultaneous OpenAI API calls. With N concurrent users that's 2N in-flight calls, hitting rate limits (requests/min, tokens/min) twice as fast. A production system would decouple the sentiment call: fire it asynchronously (no `await`) so it doesn't block the response, or route it through a background job queue. This also means a sentiment failure never degrades the chat experience.
+However, sentiment is not required for the user-facing response — it is a side effect (logging only). So the chosen approach is **fire-and-forget**: the sentiment call is kicked off without `await`, and any failure is caught and logged without affecting the chat response. This keeps chat latency fully independent from sentiment latency and failures.
+
+```typescript
+getSentiment(messages).catch(err => console.error('[Sentiment error]', err));
+const assistantContent = await getChatCompletion(messages);
+```
+
+At scale, even fire-and-forget means N concurrent users generate N parallel sentiment calls alongside N chat calls. A production system would route sentiment through a background job queue to decouple it entirely from the request lifecycle and avoid OpenAI rate limits doubling.
 
 ---
 
 ## Notes & future considerations
 
 **Conversation length and context window**
-Every request sends the full conversation history to OpenAI. This works well for short conversations but has two implications as history grows:
 
-- **Token limit** — `gpt-4o-mini` supports 128k tokens, but very long conversations will eventually hit it and the API will return an error. A practical mitigation is to truncate to the last N messages (e.g. 20) before sending, accepting some loss of early context.
-- **Attention degradation** — even within the context window, LLMs attend less reliably to content far back in the history. Long-running conversations may feel less coherent as the model "forgets" earlier details.
+The current implementation sends the full conversation history on every request. This is intentionally simple and optimised for correctness and developer speed. For production, bounded context management would be needed.
 
-A production system would address this with a summarisation strategy: periodically collapse older messages into a single summary message, keeping the total token count bounded while preserving the gist of the conversation.
+There are two distinct problems as history grows:
+
+*Hard limit* — when `request tokens + response tokens > context window`, OpenAI returns an error. For `gpt-4o-mini` the window is large (128k tokens), but not infinite. A very active conversation will eventually hit it.
+
+*Soft degradation (the more interesting problem)* — even well within the context window, as history grows: latency increases, cost increases, and model attention quality drops. Very old messages become lower-signal and less useful to send repeatedly. Even if the model technically supports the context size, you're paying to re-send content the model is increasingly unlikely to use well. This is the real production concern.
+
+Production strategies:
+
+**Strategy A — Sliding window (simplest)**
+Keep only the system prompt + last N messages (`messages.slice(-20)`). Simple, cheap, and avoids both the hard and soft limits. Loses long-term memory, which is acceptable for many use cases. Usually the first production step.
+
+**Strategy B — Summarisation (better)**
+Once the conversation grows past a threshold, collapse old messages into a single synthetic summary message:
+```
+System: Conversation so far — user is planning a trip to Paris, prefers museums and cafés, wants low-budget options.
+```
+Then send: summary + recent messages. Preserves context without growing token count indefinitely. The common real-world approach.
+
+**Strategy C — Retrieval / memory store (advanced)**
+Extract and store structured facts separately (favourite city, dietary preference, prior decisions). Retrieve relevant facts dynamically per request. This is RAG/agent-memory territory — overkill for most chat apps, but the right answer for personalised long-running assistants.
+
+**Prompt caching**
+OpenAI supports prompt caching — requests whose first N tokens match a previously seen prefix are served at ~50% lower cost and reduced latency. This isn't useful here because the system prompt is only ~15 tokens (well below the 1024-token minimum cacheable prefix). If the prompt were ever expanded with a detailed persona, tool descriptions, or few-shot examples, keeping that content at the very top of the messages array would make it eligible for caching across all requests.
 
 ---
 
@@ -101,10 +128,20 @@ A production system would address this with a summarisation strategy: periodical
 
 ---
 
-## What's next
+## Test run
 
-1. **`POST /chat/message` route** — controller validates the incoming message array with Zod and calls `getChatCompletion` from `bl/chat.ts`
-2. **Sentiment extraction** — a second function in `bl/chat.ts` using OpenAI tool calling to score the user's sentiment (0–100) and log it to the console
-3. **Parallel calls** — both the chat completion and sentiment extraction run in `Promise.all` inside the route handler so latency is `max(completion, sentiment)` rather than the sum
-4. **Frontend wired up** — `App.tsx` calls the backend on submit, maintains conversation history in state, and renders the real assistant replies
-5. **Conversations feature** — in-memory store on the backend, CRUD routes, and a conversations list page with routing on the frontend
+Verified end-to-end with a live API key. Sample server output for a 2-message conversation:
+
+```
+Server running on port 3000
+[Sentiment] 100      ← first message (very positive)
+[Sentiment] 70       ← second message (still positive, slightly more neutral)
+```
+
+Sample API responses:
+```json
+{ "content": "The capital of France is Paris. 😊" }
+{ "content": "The best time to visit Paris is spring (March–May) or fall (September–November)... 🍀" }
+```
+
+Each reply ends with a different emoji (server-controlled), conversation history is preserved across messages, and sentiment scores are logged without affecting response latency.
