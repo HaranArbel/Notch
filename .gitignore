@@ -2,6 +2,7 @@ node_modules
 dist
 *.local
 .DS_Store
+.idea
 
 # Environment files with secrets - use *.example files instead
 local.env
