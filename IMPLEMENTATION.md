@@ -68,9 +68,16 @@ One remaining trade-off: the generator is a module-level singleton, so all conve
 
 ### Parallel OpenAI calls
 
-Sentiment extraction requires a second OpenAI call using function calling. Running it in `Promise.all` alongside the chat completion means both calls happen concurrently — the total latency is `max(completion, sentiment)` rather than the sum. Since neither result depends on the other, parallelism is free here.
+Sentiment extraction requires a second OpenAI call using function calling. The initial approach considered was `Promise.all` — both calls fire simultaneously and the total latency is `max(completion, sentiment)` rather than their sum.
 
-At scale, `Promise.all` means every user request fires 2 simultaneous OpenAI API calls. With N concurrent users that's 2N in-flight calls, hitting rate limits (requests/min, tokens/min) twice as fast. A production system would decouple the sentiment call: fire it asynchronously (no `await`) so it doesn't block the response, or route it through a background job queue. This also means a sentiment failure never degrades the chat experience.
+However, sentiment is not required for the user-facing response — it is a side effect (logging only). So the chosen approach is **fire-and-forget**: the sentiment call is kicked off without `await`, and any failure is caught and logged without affecting the chat response. This keeps chat latency fully independent from sentiment latency and failures.
+
+```typescript
+getSentiment(messages).catch(err => console.error('[Sentiment error]', err));
+const assistantContent = await getChatCompletion(messages);
+```
+
+At scale, even fire-and-forget means N concurrent users generate N parallel sentiment calls alongside N chat calls. A production system would route sentiment through a background job queue to decouple it entirely from the request lifecycle and avoid OpenAI rate limits doubling.
 
 ---
 
