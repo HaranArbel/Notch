@@ -67,15 +67,19 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     addMessage(req.params.id, {role: 'user', content: parsed.data.content});
 
-    const updatedConversation = getConversation(req.params.id)!;
-    const [assistantContent] = await Promise.all([
-        getChatCompletion(updatedConversation.messages),
-        getSentiment(updatedConversation.messages),
-    ]);
+    try {
+        const updatedConversation = getConversation(req.params.id)!;
+        const [assistantContent] = await Promise.all([
+            getChatCompletion(updatedConversation.messages),
+            getSentiment(updatedConversation.messages),
+        ]);
 
-    addMessage(req.params.id, {role: 'assistant', content: assistantContent});
-
-    res.json({content: assistantContent});
+        addMessage(req.params.id, {role: 'assistant', content: assistantContent});
+        res.json({content: assistantContent});
+    } catch (err) {
+        console.error('[Error] OpenAI call failed:', err);
+        res.status(502).json({error: 'Failed to get response from AI'});
+    }
 });
 
 export default router;
