@@ -23,8 +23,6 @@ function* emojiGenerator(): Generator<string, never, undefined> {
 const nextEmoji = emojiGenerator();
 
 export async function getChatCompletion(messages: Message[]): Promise<string> {
-    const emoji = nextEmoji.next().value;
-
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -34,6 +32,8 @@ export async function getChatCompletion(messages: Message[]): Promise<string> {
     });
 
     const content = completion.choices[0]?.message.content ?? '';
+    // Pick emoji only after a successful response so it isn't wasted on failure
+    const emoji = nextEmoji.next().value;
     return `${content} ${emoji}`;
 }
 
