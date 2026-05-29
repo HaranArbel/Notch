@@ -8,7 +8,7 @@ export interface Message {
     content: string;
 }
 
-const SYSTEM_PROMPT = `You are a helpful assistant.`;
+const SYSTEM_PROMPT = `You are a helpful assistant. Do not use any emojis in your responses.`;
 
 const EMOJIS = ['😊', '🎉', '🚀', '🌟', '🦄', '🔥', '🎯', '🌈', '🦋', '🍀',
                 '🎸', '🐬', '🌊', '🍕', '🎩', '🦊', '🌸', '⚡', '🎲', '🐙'];
