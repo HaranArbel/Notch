@@ -1,6 +1,6 @@
 import express from "express";
 import {z} from "zod";
-import {getChatCompletion} from "../bl/chat";
+import {getChatCompletion, getSentiment} from "../bl/chat";
 import {createConversation, getConversation, listConversations, addMessage} from "../bl/conversations";
 
 const router = express.Router();
@@ -68,7 +68,10 @@ router.post('/conversations/:id/messages', async (req, res) => {
     addMessage(req.params.id, {role: 'user', content: parsed.data.content});
 
     const updatedConversation = getConversation(req.params.id)!;
-    const assistantContent = await getChatCompletion(updatedConversation.messages);
+    const [assistantContent] = await Promise.all([
+        getChatCompletion(updatedConversation.messages),
+        getSentiment(updatedConversation.messages),
+    ]);
 
     addMessage(req.params.id, {role: 'assistant', content: assistantContent});
 
