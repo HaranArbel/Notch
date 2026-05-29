@@ -72,10 +72,7 @@ Sentiment extraction (Part B) requires a second OpenAI call using function calli
 
 ## What's next
 
-| Task | Description |
-|------|-------------|
-| A4 | `POST /chat/message` route — wire controller to `bl/chat.ts` |
-| B1 | `getSentiment()` in `bl/chat.ts` using OpenAI tool calling |
-| B2 | Run both in `Promise.all` inside the route handler |
-| A7 | Update `App.tsx` to call the backend and show real responses |
-| C  | Conversations: in-memory store, CRUD routes, frontend routing |
+- `POST /chat/message` route wiring the controller to the chat service
+- Sentiment extraction via OpenAI tool calling, run in parallel with the chat completion
+- Frontend wired to the backend with real responses
+- Conversations feature: in-memory store, CRUD routes, frontend routing
