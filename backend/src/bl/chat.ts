@@ -8,11 +8,23 @@ export interface Message {
     content: string;
 }
 
-const SYSTEM_PROMPT = `You are a helpful assistant. 
-At the end of every message you send, sign it with a single emoji. 
-Each message must use a different emoji — never repeat the one used in the previous message.`;
+const SYSTEM_PROMPT = `You are a helpful assistant.`;
+
+const EMOJIS = ['😊', '🎉', '🚀', '🌟', '🦄', '🔥', '🎯', '🌈', '🦋', '🍀',
+                '🎸', '🐬', '🌊', '🍕', '🎩', '🦊', '🌸', '⚡', '🎲', '🐙'];
+
+function* emojiGenerator(): Generator<string, never, undefined> {
+    while (true) {
+        const shuffled = [...EMOJIS].sort(() => Math.random() - 0.5);
+        for (const emoji of shuffled) yield emoji;
+    }
+}
+
+const nextEmoji = emojiGenerator();
 
 export async function getChatCompletion(messages: Message[]): Promise<string> {
+    const emoji = nextEmoji.next().value;
+
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -21,5 +33,6 @@ export async function getChatCompletion(messages: Message[]): Promise<string> {
         ],
     });
 
-    return completion.choices[0]?.message.content ?? '';
+    const content = completion.choices[0]?.message.content ?? '';
+    return `${content} ${emoji}`;
 }
