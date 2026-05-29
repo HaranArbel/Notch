@@ -84,6 +84,9 @@ Every request sends the full conversation history to OpenAI. This works well for
 
 A production system would address this with a summarisation strategy: periodically collapse older messages into a single summary message, keeping the total token count bounded while preserving the gist of the conversation.
 
+**Prompt caching**
+OpenAI supports prompt caching — requests whose first N tokens match a previously seen prefix are served at ~50% lower cost and reduced latency. This isn't useful here because the system prompt is only ~15 tokens (well below the 1024-token minimum cacheable prefix). If the prompt were ever expanded with a detailed persona, tool descriptions, or few-shot examples, keeping that content at the very top of the messages array would make it eligible for caching across all requests.
+
 ---
 
 ## API endpoints
