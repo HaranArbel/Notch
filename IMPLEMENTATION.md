@@ -62,11 +62,15 @@ An infinite generator shuffles the full emoji pool and cycles through it. The se
 - **Decoupled** — the LLM focuses on answering; emoji logic is a separate concern
 - **Simple** — no prompt engineering, no conversation history inspection needed
 
-One trade-off: the generator is a module-level singleton, so all conversations share the same emoji sequence. In a multi-user production system, each conversation would get its own generator instance.
+To prevent the LLM from adding its own emojis independently (which would result in multiple emojis per message), the system prompt explicitly says *"Do not use any emojis in your responses."* The server then appends exactly one controlled emoji. This keeps the output predictable regardless of the model's default behaviour.
+
+One remaining trade-off: the generator is a module-level singleton, so all conversations share the same emoji sequence. In a multi-user production system, each conversation would get its own generator instance.
 
 ### Parallel OpenAI calls (Part B)
 
 Sentiment extraction (Part B) requires a second OpenAI call using function calling. Running it in `Promise.all` alongside the chat completion means both calls happen concurrently — the total latency is `max(completion, sentiment)` rather than the sum. Since neither result depends on the other, parallelism is free here.
+
+At scale, `Promise.all` means every user request fires 2 simultaneous OpenAI API calls. With N concurrent users that's 2N in-flight calls, hitting rate limits (requests/min, tokens/min) twice as fast. A production system would decouple the sentiment call: fire it asynchronously (no `await`) so it doesn't block the response, or route it through a background job queue. This also means a sentiment failure never degrades the chat experience.
 
 ---
 
@@ -87,7 +91,7 @@ A production system would address this with a summarisation strategy: periodical
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/healthCheck` | Liveness check |
-| `POST` | `/chat/message` | Stateless one-shot chat completion. Body: `{ messages: [{role, content}] }`. Returns `{ content }`. Kept for completeness but superseded by the conversation routes in Part C. |
+| ~~`POST`~~ | ~~`/chat/message`~~ | ~~Stateless one-shot endpoint, removed — superseded by `POST /conversations/:id/messages`.~~ |
 | `GET` | `/conversations` | List all conversations, newest first |
 | `POST` | `/conversations` | Create a new conversation. Body: `{ title }`. Returns the created conversation. |
 | `GET` | `/conversations/:id` | Get a conversation with its full message history |
