@@ -71,8 +71,11 @@ export function ChatPage() {
                 role: m.role === 'assistant' ? 'agent' : 'user',
                 content: m.content,
             })));
-        }).catch(console.error);
-    }, [id]);
+        }).catch(() => {
+            // Conversation not found (e.g. server restarted and lost in-memory state)
+            navigate('/', {replace: true});
+        });
+    }, [id, navigate]);
 
     const formOnSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
