@@ -84,12 +84,29 @@ At scale, even fire-and-forget means N concurrent users generate N parallel sent
 ## Notes & future considerations
 
 **Conversation length and context window**
-Every request sends the full conversation history to OpenAI. This works well for short conversations but has two implications as history grows:
 
-- **Token limit** — `gpt-4o-mini` supports 128k tokens, but very long conversations will eventually hit it and the API will return an error. A practical mitigation is to truncate to the last N messages (e.g. 20) before sending, accepting some loss of early context.
-- **Attention degradation** — even within the context window, LLMs attend less reliably to content far back in the history. Long-running conversations may feel less coherent as the model "forgets" earlier details.
+The current implementation sends the full conversation history on every request. This is intentionally simple and optimised for correctness and developer speed. For production, bounded context management would be needed.
 
-A production system would address this with a summarisation strategy: periodically collapse older messages into a single summary message, keeping the total token count bounded while preserving the gist of the conversation.
+There are two distinct problems as history grows:
+
+*Hard limit* — when `request tokens + response tokens > context window`, OpenAI returns an error. For `gpt-4o-mini` the window is large (128k tokens), but not infinite. A very active conversation will eventually hit it.
+
+*Soft degradation (the more interesting problem)* — even well within the context window, as history grows: latency increases, cost increases, and model attention quality drops. Very old messages become lower-signal and less useful to send repeatedly. Even if the model technically supports the context size, you're paying to re-send content the model is increasingly unlikely to use well. This is the real production concern.
+
+Production strategies:
+
+**Strategy A — Sliding window (simplest)**
+Keep only the system prompt + last N messages (`messages.slice(-20)`). Simple, cheap, and avoids both the hard and soft limits. Loses long-term memory, which is acceptable for many use cases. Usually the first production step.
+
+**Strategy B — Summarisation (better)**
+Once the conversation grows past a threshold, collapse old messages into a single synthetic summary message:
+```
+System: Conversation so far — user is planning a trip to Paris, prefers museums and cafés, wants low-budget options.
+```
+Then send: summary + recent messages. Preserves context without growing token count indefinitely. The common real-world approach.
+
+**Strategy C — Retrieval / memory store (advanced)**
+Extract and store structured facts separately (favourite city, dietary preference, prior decisions). Retrieve relevant facts dynamically per request. This is RAG/agent-memory territory — overkill for most chat apps, but the right answer for personalised long-running assistants.
 
 **Prompt caching**
 OpenAI supports prompt caching — requests whose first N tokens match a previously seen prefix are served at ~50% lower cost and reduced latency. This isn't useful here because the system prompt is only ~15 tokens (well below the 1024-token minimum cacheable prefix). If the prompt were ever expanded with a detailed persona, tool descriptions, or few-shot examples, keeping that content at the very top of the messages array would make it eligible for caching across all requests.
