@@ -82,6 +82,21 @@ A production system would address this with a summarisation strategy: periodical
 
 ---
 
+## API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/healthCheck` | Liveness check |
+| `POST` | `/chat/message` | Stateless one-shot chat completion. Body: `{ messages: [{role, content}] }`. Returns `{ content }`. Kept for completeness but superseded by the conversation routes in Part C. |
+| `GET` | `/conversations` | List all conversations, newest first |
+| `POST` | `/conversations` | Create a new conversation. Body: `{ title }`. Returns the created conversation. |
+| `GET` | `/conversations/:id` | Get a conversation with its full message history |
+| `POST` | `/conversations/:id/messages` | Send a message in a conversation. Body: `{ content }`. Saves the user message, calls OpenAI, saves the assistant reply, returns `{ content }`. |
+
+**Design rationale:** the conversation routes follow REST conventions — conversations are a resource, messages are a sub-resource. `POST /conversations/:id/messages` is the primary endpoint for Part C; it only requires the new message content since the backend owns the history. The generic `/chat/message` route predates Part C and passes the full history in the request body (stateless, no server-side storage).
+
+---
+
 ## What's next
 
 1. **`POST /chat/message` route** — controller validates the incoming message array with Zod and calls `getChatCompletion` from `bl/chat.ts`
