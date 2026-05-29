@@ -72,7 +72,8 @@ Sentiment extraction (Part B) requires a second OpenAI call using function calli
 
 ## What's next
 
-- `POST /chat/message` route wiring the controller to the chat service
-- Sentiment extraction via OpenAI tool calling, run in parallel with the chat completion
-- Frontend wired to the backend with real responses
-- Conversations feature: in-memory store, CRUD routes, frontend routing
+1. **`POST /chat/message` route** — controller validates the incoming message array with Zod and calls `getChatCompletion` from `bl/chat.ts`
+2. **Sentiment extraction** — a second function in `bl/chat.ts` using OpenAI tool calling to score the user's sentiment (0–100) and log it to the console
+3. **Parallel calls** — both the chat completion and sentiment extraction run in `Promise.all` inside the route handler so latency is `max(completion, sentiment)` rather than the sum
+4. **Frontend wired up** — `App.tsx` calls the backend on submit, maintains conversation history in state, and renders the real assistant replies
+5. **Conversations feature** — in-memory store on the backend, CRUD routes, and a conversations list page with routing on the frontend
