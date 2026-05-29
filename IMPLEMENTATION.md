@@ -18,21 +18,54 @@ cd frontend && npm install && npm run dev
 
 ## Architecture
 
-```
-frontend/          React + Vite + TypeScript
-  src/
-    api/           Fetch wrappers — all HTTP logic isolated here
-    pages/         One component per route
-    ChatMessage/   Reusable chat bubble component
+```mermaid
+flowchart TD
+    subgraph browser [Browser]
+        ConvPage[ConversationsPage]
+        ChatPage[ChatPage]
+    end
 
-backend/           Express + TypeScript
-  src/
-    bl/            Business logic — no HTTP knowledge, pure functions
-    controller/    HTTP layer — validates input, calls bl/, sends response
-    config.ts      Zod-validated env config (fails fast on missing keys)
+    subgraph backend [Express Backend :3000]
+        Controller[controller/index.ts\nZod validation]
+        subgraph bl [bl/]
+            ChatBL[chat.ts\ngetChatCompletion\ngetSentiment]
+            ConvBL[conversations.ts\nIn-memory store]
+        end
+        Controller --> ChatBL
+        Controller --> ConvBL
+    end
+
+    subgraph openai [OpenAI API]
+        Completions[Chat Completions]
+        FnCall[Function Calling\nsentiment]
+    end
+
+    ConvPage -->|"GET/POST /conversations"| Controller
+    ChatPage -->|"GET /conversations/:id\nPOST /conversations/:id/messages"| Controller
+    ChatBL -->|await| Completions
+    ChatBL -.->|fire-and-forget| FnCall
+    FnCall -.->|console.log score| ConvBL
 ```
 
 **Key principle:** the controller knows about `req`/`res`; `bl/` does not. This makes the business logic easy to test and reason about independently.
+
+---
+
+## Scale considerations
+
+| Problem | Impact | Mitigation |
+|---------|--------|------------|
+| **In-memory conversation store** | Single instance only — no horizontal scaling, data lost on restart | Persist to a database (Redis for sessions, Postgres for durable storage) |
+| **No auth** | Any client can read or write any conversation by guessing a UUID | Add authentication; scope conversation access to the authenticated user |
+| **CORS open to all origins** | Any website can make requests to the API | Restrict to known frontend origins |
+| **OpenAI rate limits** | N users = N chat calls + N sentiment calls hitting RPM/TPM limits simultaneously | Queue requests; use exponential backoff with retries; cache common responses |
+| **No backpressure / queuing** | Burst traffic hits OpenAI directly — spikes cause cascading 429s | Job queue (e.g. BullMQ) with concurrency limits |
+| **Unbounded context growth** | Token count grows with every message — cost and latency increase, response quality degrades | Sliding window or summarisation strategy (see context window section) |
+| **No streaming** | Users wait for the full response before anything appears — feels slow on long answers | Use OpenAI streaming API and send chunks to the client via SSE or WebSocket |
+| **No retry logic** | Transient OpenAI failures immediately return 502 | Retry with exponential backoff on 429/500/503 |
+| **Emoji generator singleton** | All conversations share the same sequence — in a multi-tenant system this is a minor UX quirk | One generator instance per conversation |
+| **No observability** | No request tracing, latency metrics, or error rate tracking | Add structured logging, tracing (e.g. OpenTelemetry), and a metrics dashboard |
+| **Sentiment as fire-and-forget** | Sentiment failures are silently dropped after logging | Route to a persistent job queue so failed sentiment calls can be retried and stored |
 
 ---
 
