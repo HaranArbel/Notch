@@ -22,7 +22,7 @@ cd frontend && npm install && npm run dev
 frontend/          React + Vite + TypeScript
   src/
     api/           Fetch wrappers — all HTTP logic isolated here
-    pages/         One component per route (Part C)
+    pages/         One component per route
     ChatMessage/   Reusable chat bubble component
 
 backend/           Express + TypeScript
@@ -38,18 +38,18 @@ backend/           Express + TypeScript
 
 ## Decisions
 
-### Environment config (A2)
+### Environment config
 
 - `local.env` is gitignored — secrets never touch git history
 - `local.env.example` is committed as a template
 - Config is parsed and validated with **Zod** at startup — the server crashes immediately with a clear message if a required variable is missing, rather than failing silently at runtime
 
-### Frontend API base URL (A6)
+### Frontend API base URL
 
 - Hardcoding `localhost:3000` would break in any non-local environment
 - Using Vite's `import.meta.env.VITE_API_BASE` means local dev, staging, and production each set their own value without code changes
 
-### Emoji signing (A3 / Part A requirement)
+### Emoji signing
 
 The requirement says *"the bot always signs each message with a different emoji"*. Two approaches considered:
 
@@ -66,9 +66,9 @@ To prevent the LLM from adding its own emojis independently (which would result 
 
 One remaining trade-off: the generator is a module-level singleton, so all conversations share the same emoji sequence. In a multi-user production system, each conversation would get its own generator instance.
 
-### Parallel OpenAI calls (Part B)
+### Parallel OpenAI calls
 
-Sentiment extraction (Part B) requires a second OpenAI call using function calling. Running it in `Promise.all` alongside the chat completion means both calls happen concurrently — the total latency is `max(completion, sentiment)` rather than the sum. Since neither result depends on the other, parallelism is free here.
+Sentiment extraction requires a second OpenAI call using function calling. Running it in `Promise.all` alongside the chat completion means both calls happen concurrently — the total latency is `max(completion, sentiment)` rather than the sum. Since neither result depends on the other, parallelism is free here.
 
 At scale, `Promise.all` means every user request fires 2 simultaneous OpenAI API calls. With N concurrent users that's 2N in-flight calls, hitting rate limits (requests/min, tokens/min) twice as fast. A production system would decouple the sentiment call: fire it asynchronously (no `await`) so it doesn't block the response, or route it through a background job queue. This also means a sentiment failure never degrades the chat experience.
 
