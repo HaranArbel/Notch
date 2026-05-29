@@ -6,6 +6,7 @@ const configFile = fs.readFileSync('local.env').toString();
 const configUnparsed = dotenv.parse(configFile);
 
 const configSchema = z.object({
-    PORT: z.number({coerce: true})
+    PORT: z.number({coerce: true}),
+    OPENAI_API_KEY: z.string().min(1),
 });
 export const config = configSchema.parse(configUnparsed);
